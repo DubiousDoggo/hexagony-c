@@ -10,7 +10,7 @@
 #define STRINGIFY(x) #x
 #define STRINGIZE(x) STRINGIFY(x)
 
-#define MEM_FMT_LEN 2
+#define MEM_FMT_LEN 2 // digits per cell in memory debug view
 #define MEM_FMT "%" STRINGIZE(MEM_FMT_LEN) "d"
 
 enum direction { NW, NE, E, SE, SW, W };
@@ -186,6 +186,26 @@ void move_mp(struct memory_pointer *ptr, enum neighbor neighbor) {
     ptr->q = xyz[Y];
 }
 
+void print_program(struct program_cell *program, long program_rings, ssize_t ip_index[6]) {
+    size_t i = 0;
+    for (long z = -(program_rings - 1); z < program_rings; z++) {
+        printf("%*s", labs(z), "");
+        for (long x = 0; x < 2 * program_rings - 1 - labs(z); x++) {
+            for (unsigned ip = 0; ip < 6; ip++) {
+                if (i == ip_index[ip]) {
+                    printf("\e[0;3%dm", ip + 1);
+                    break;
+                }
+            }
+            putchar(program[i].debug ? '`' : ' ');
+            putchar(program[i].value);
+            fputs("\e[0m", stdout);
+            ++i;
+        }
+        putchar('\n');
+    }
+}
+
 void print_memory(struct memory_cell *memory, long rings) {
 
     for (long z = rings - 1; z >= 1 - rings; z--) {
@@ -274,7 +294,7 @@ int main(int argc, char **argv) {
 
     bool force_debug = false;
     struct program_cell *instruction;
-    do {
+    while (true) {
         struct IP *IP = IPs + IP_index;
         if (IP->ignore_next) {
             IP->ignore_next = false;
@@ -282,16 +302,24 @@ int main(int argc, char **argv) {
             instruction = program + axial_to_index(IP->p, IP->q, program_rings);
             if (instruction->debug || force_debug) {
                 printf("\nPaused on '%c'\n", instruction->value);
+                ssize_t ips[6];
+                for (unsigned ip = 0; ip < 6; ip++)
+                    ips[ip] = axial_to_index(IPs[ip].p, IPs[ip].q, program_rings);
+                print_program(program, program_rings, ips);
                 printf("Active IP: %d\n", IP_index);
                 int digits = log10(program_rings);
                 for (int i = 0; i < 6; i++)
-                    printf("IP %d (%+*ld, %+*ld) %s\n", i, digits, IPs[i].p, digits, IPs[i].q,
+                    printf("IP \e[0;3%dm%d\e[0m (%+*ld, %+*ld) %s\n", i + 1, i, digits, IPs[i].p, digits, IPs[i].q,
                            direction_name[IPs[i].direction]);
                 print_memory(memory, memory_rings);
                 printf("MP: (%+ld, %+ld) %s %s\n", MP.p, MP.q, axis_name[MP.axis],
                        MP.direction == IN ? "INWARDS" : "OUTWARDS");
-                printf("Press enter to continue: ");
-                getchar();
+                printf(": ");
+                switch (getchar()) {
+                case 's': force_debug = true; break;
+                case 'c': force_debug = false; break;
+                case 'q': goto done;
+                }
             }
             if (isalpha(instruction->value)) // set MP to value
                 *get_memory_edge(MP, &memory, &memory_rings) = instruction->value;
@@ -307,7 +335,7 @@ int main(int argc, char **argv) {
                 case '.': break;
 
                 // terminates the program.
-                case '@': break;
+                case '@': goto done;
 
                 // increments the current memory edge.
                 case ')': ++*get_memory_edge(MP, &memory, &memory_rings); break;
@@ -458,9 +486,9 @@ int main(int argc, char **argv) {
                     break;
 
                 // switches to the previous IP
-                case '[': IP_index = modulo(IP_index + 1, 6); break;
+                case '[': IP_index = modulo(IP_index - 1, 6); break;
                 // switches to the next IP
-                case ']': IP_index = modulo(IP_index - 1, 6); break;
+                case ']': IP_index = modulo(IP_index + 1, 6); break;
                 // takes the current memory edge modulo 6 and switches to the IP with that index.
                 case '#': IP_index = modulo(*get_memory_edge(MP, &memory, &memory_rings), 6);
 
@@ -533,8 +561,11 @@ int main(int argc, char **argv) {
         }
         IP->p = np;
         IP->q = nq;
-    } while (instruction->value != '@');
+    }
 
+done:
     free(memory);
     free(program);
+
+    return EXIT_SUCCESS;
 }

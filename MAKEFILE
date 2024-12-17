@@ -3,7 +3,7 @@
 CC = gcc
 
 ./bin/hexagony.exe : ./src/hexagony.c
-	$(CC) ./src/hexagony.c -o ./bin/hexagony.exe
+	$(CC) -g ./src/hexagony.c -o ./bin/hexagony.exe
 
 clean:
-	rm -r ./bin
+	rm -r ./bin/*
