@@ -1,0 +1,9 @@
+.PHONY: clean
+
+CC = gcc
+
+./bin/hexagony.exe : ./src/hexagony.c
+	$(CC) ./src/hexagony.c -o ./bin/hexagony.exe
+
+clean:
+	rm -r ./bin
