@@ -29,7 +29,7 @@
             "type": "cppdbg",
             "request": "launch",
             "program": "${workspaceFolder}/bin/hexagony.exe",
-            "args": ["${workspaceFolder}/test-cases/Brainfuck.hxg"],
+            "args": ["${workspaceFolder}/test-cases/memory.hxg"],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
             "environment": [],
