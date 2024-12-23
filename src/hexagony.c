@@ -13,8 +13,8 @@
 #define MEM_FMT_LEN 2 // digits per cell in memory debug view
 #define MEM_FMT "%" STRINGIZE(MEM_FMT_LEN) "d"
 
-enum direction { NW, NE, E, SE, SW, W };
 enum axis { X, Y, Z };
+enum direction { NW, NE, E, SE, SW, W };
 enum neighbor { LEFT = -1, RIGHT = 1 };
 
 struct program_cell {
@@ -45,13 +45,28 @@ struct memory_pointer {
 const struct {
     long dp, dq;
 } direction_offset[] = {
-    [NW] = {0, -1}, [NE] = {-1, 0}, [E] = {-1, 1}, [SE] = {0, 1}, [SW] = {1, 0}, [W] = {1, -1},
+    [NW] = { 0, -1},
+    [NE] = {-1,  0},
+    [ E] = {-1,  1}, 
+    [SE] = { 0,  1},
+    [SW] = { 1,  0},
+    [ W] = { 1, -1},
 };
 
-const char *direction_name[6] = {
-    [NW] = "NORTH WEST", [NE] = "NORTH EAST", [E] = "EAST", [SE] = "SOUTH EAST", [SW] = "SOUTH WEST", [W] = "WEST",
+const char *direction_name[] = {
+    [NW] = "NORTH WEST", 
+    [NE] = "NORTH EAST", 
+    [ E] = "EAST",
+    [SE] = "SOUTH EAST",
+    [SW] = "SOUTH WEST",
+    [ W] = "WEST",
 };
-const char *axis_name[3] = {[X] = "X", [Y] = "Y", [Z] = "Z"};
+
+const char *axis_name[] = {
+    [X] = "X",
+    [Y] = "Y",
+    [Z] = "Z",
+};
 
 // mathematical modulus
 long modulo(long a, long b) {
@@ -59,20 +74,18 @@ long modulo(long a, long b) {
     return (result >= 0 ? result : result + b) * (b >= 0 ? 1 : -1);
 }
 
-// Convert x,y axial coordinates to index for sequentially stored rows along the z axis
+// convert x,y axial coordinates to index for sequentially stored rows along the z axis
 ssize_t axial_to_index(long p, long q, long rings) {
     long x = p;
     long y = q;
     long z = -p - q;
-    if (labs(x) + labs(y) + labs(z) > 2 * (rings - 1))
-        return -1;
-    ssize_t i = (3 * rings * (rings - 1)) / 2;
-    i += y + -z * (rings * 2 - 1);
-    i += z * (labs(z) + 1) / 2;
-    return i;
+    if (labs(x) + labs(y) + labs(z) > 2 * (rings - 1)) return -1;
+    return (3 * rings * (rings - 1)) / 2
+           + y + -z * (rings * 2 - 1)
+           + z * (labs(z) + 1) / 2;
 }
 
-// Convert x,y axial coordinate to a radial index
+// convert x,y axial coordinate to a radial index
 size_t axial_to_mem_index(long p, long q) {
     long x = p;
     long y = q;
@@ -82,18 +95,12 @@ size_t axial_to_mem_index(long p, long q) {
     size_t ring = (labs(x) + labs(y) + labs(z)) / 2;
     size_t i = ring > 0 ? (3 * ring * (ring - 1) + 1) : 0;
     // find the clockwise offset from the closest corner of the ring
-    if (x <= 0 && y < 0)
-        i += ring * 0 + labs(x);
-    if (y >= 0 && z > 0)
-        i += ring * 1 + labs(y);
-    if (z <= 0 && x < 0)
-        i += ring * 2 + labs(z);
-    if (x >= 0 && y > 0)
-        i += ring * 3 + labs(x);
-    if (y <= 0 && z < 0)
-        i += ring * 4 + labs(y);
-    if (z >= 0 && x > 0)
-        i += ring * 5 + labs(z);
+    if (x <= 0 && y < 0) i += ring * 0 + labs(x);
+    if (y >= 0 && z > 0) i += ring * 1 + labs(y);
+    if (z <= 0 && x < 0) i += ring * 2 + labs(z);
+    if (x >= 0 && y > 0) i += ring * 3 + labs(x);
+    if (y <= 0 && z < 0) i += ring * 4 + labs(y);
+    if (z >= 0 && x > 0) i += ring * 5 + labs(z);
     return i;
 }
 
@@ -125,69 +132,30 @@ memory_edge *get_memory_edge(struct memory_pointer ptr, struct memory_cell **mem
     return &get_memory_cell(ptr.p, ptr.q, memory, rings)->value[ptr.axis];
 }
 
+// get a pointer to a neighbor of the edge pointed to by pointer
 memory_edge *get_neighbor(struct memory_pointer ptr, enum neighbor neighbor, struct memory_cell **memory, long *rings) {
-    struct memory_cell *cell;
     long xyz[3] = {ptr.p, ptr.q, -ptr.p - ptr.q};
+    enum axis neighbor_axis = modulo(ptr.axis + neighbor, 3);
     if (ptr.direction == OUT) {
-        // TODO I'm pretty sure this can be simplified with a bit of mathing
-        switch (ptr.axis) {
-        case X:
-            xyz[X] += 1;
-            if (neighbor == LEFT)
-                xyz[Z] -= 1;
-            if (neighbor == RIGHT)
-                xyz[Y] -= 1;
-            break;
-        case Y:
-            xyz[Y] += 1;
-            if (neighbor == LEFT)
-                xyz[X] -= 1;
-            if (neighbor == RIGHT)
-                xyz[Z] -= 1;
-            break;
-        case Z:
-            xyz[Z] += 1;
-            if (neighbor == LEFT)
-                xyz[Y] -= 1;
-            if (neighbor == RIGHT)
-                xyz[X] -= 1;
-        }
+        ++xyz[ptr.axis];
+        --xyz[neighbor_axis];
     }
-    cell = get_memory_cell(xyz[X], xyz[Y], memory, rings);
-    return &cell->value[modulo(ptr.axis + neighbor, 3)];
+    struct memory_cell *cell = get_memory_cell(xyz[X], xyz[Y], memory, rings);
+    return &cell->value[neighbor_axis];
 }
 
+// move memory pointer to its left or right neighbor
 void move_mp(struct memory_pointer *ptr, enum neighbor neighbor) {
     long xyz[3] = {ptr->p, ptr->q, -ptr->p - ptr->q};
+    enum axis neighbor_axis = modulo(ptr->axis + neighbor, 3);
     if (ptr->direction == OUT) {
-        switch (ptr->axis) {
-        case X:
-            xyz[X] += 1;
-            if (neighbor == LEFT)
-                xyz[Z] -= 1;
-            if (neighbor == RIGHT)
-                xyz[Y] -= 1;
-            break;
-        case Y:
-            xyz[Y] += 1;
-            if (neighbor == LEFT)
-                xyz[X] -= 1;
-            if (neighbor == RIGHT)
-                xyz[Z] -= 1;
-            break;
-        case Z:
-            xyz[Z] += 1;
-            if (neighbor == LEFT)
-                xyz[Y] -= 1;
-            if (neighbor == RIGHT)
-                xyz[X] -= 1;
-        }
-
+        ++xyz[ptr->axis];
+        --xyz[neighbor_axis];
         ptr->direction = IN;
     } else {
         ptr->direction = OUT;
     }
-    ptr->axis = modulo(ptr->axis + neighbor, 3);
+    ptr->axis = neighbor_axis;
     ptr->p = xyz[X];
     ptr->q = xyz[Y];
 }
@@ -214,7 +182,7 @@ void print_program(struct program_cell *program, long program_rings, ssize_t ip_
 
 void print_memory(struct memory_cell *memory, long rings, const struct memory_pointer *ptr) {
 
-    const long print_rings = 4;
+    const long print_rings = 4; // how many rings around ptr to show
     const struct memory_cell oob = {0, 0, 0};
     const long ptr_z = -ptr->p - ptr->q;
     printf("[%ld rings allocated]\n", rings);
@@ -265,6 +233,7 @@ int main(int argc, char **argv) {
     long program_rings = 1;
     size_t program_size = (3 * program_rings * (program_rings - 1) + 1); // ring'th centered hexagonal number
     struct program_cell *program = malloc(program_size * sizeof(struct program_cell));
+    
     {
         FILE *source = fopen(argv[1], "r");
         if (source == NULL) {
@@ -302,11 +271,11 @@ int main(int argc, char **argv) {
         enum direction direction;
         bool ignore_next;
     } IPs[6] = {
-        {0, -(program_rings - 1), E, false},                     // NW
-        {-(program_rings - 1), 0, SE, false},                    // NE
+        {                   0, -(program_rings - 1),  E, false}, // NW
+        {-(program_rings - 1),                    0, SE, false}, // NE
         {-(program_rings - 1), +(program_rings - 1), SW, false}, // E
-        {0, +(program_rings - 1), W, false},                     // SE
-        {+(program_rings - 1), 0, NW, false},                    // SW
+        {                   0, +(program_rings - 1),  W, false}, // SE
+        {+(program_rings - 1),                    0, NW, false}, // SW
         {+(program_rings - 1), -(program_rings - 1), NE, false}, // W
     };
     int IP_index = 0;
@@ -348,66 +317,70 @@ int main(int argc, char **argv) {
                 default: goto prompt;
                 }
             }
-            if (isalpha(instruction->value)) // set MP to value
+            if (isalpha(instruction->value)) { // set current memory edge to value
                 *get_memory_edge(MP, &memory, &memory_rings) = instruction->value;
-            else if (isdigit(instruction->value)) {
-                // multiply the current memory edge by 10 and add the corresponding digit. If the current edge has a
-                // negative value, the digit is subtracted instead of added.
-                int *edge = get_memory_edge(MP, &memory, &memory_rings);
+            
+            } else if (isdigit(instruction->value)) {
+                // multiply the current memory edge by 10 and add the corresponding digit.
+                // if the current edge has a negative value, the digit is subtracted instead of added.
+                memory_edge *edge = get_memory_edge(MP, &memory, &memory_rings);
                 *edge *= 10;
                 *edge += (*edge < 0 ? -1 : 1) * (instruction->value - '0');
-            } else
-                switch (instruction->value) {
-                // no-op.
-                case '.': break;
+            
+            } else switch (instruction->value) {
+                
+                case '.': // no-op.
+                    break;
+                
+                case '@': // terminates the program.
+                    goto done;
 
-                // terminates the program.
-                case '@': goto done;
-
-                // increments the current memory edge.
-                case ')': ++*get_memory_edge(MP, &memory, &memory_rings); break;
-
-                // decrements the current memory edge.
-                case '(': --*get_memory_edge(MP, &memory, &memory_rings); break;
-
-                // sets the current memory edge to the sum of the left and right neighbours.
-                case '+':
-                    *get_memory_edge(MP, &memory, &memory_rings) = *get_neighbor(MP, LEFT, &memory, &memory_rings) +
-                                                                   *get_neighbor(MP, RIGHT, &memory, &memory_rings);
+                case ')': // increments the current memory edge. 
+                    ++*get_memory_edge(MP, &memory, &memory_rings); 
                     break;
 
-                // sets the current memory edge to the difference of the left and right neighbours (left - right).
-                case '-':
-                    *get_memory_edge(MP, &memory, &memory_rings) = *get_neighbor(MP, LEFT, &memory, &memory_rings) -
-                                                                   *get_neighbor(MP, RIGHT, &memory, &memory_rings);
+                case '(': // decrements the current memory edge.
+                    --*get_memory_edge(MP, &memory, &memory_rings); 
                     break;
 
-                // sets the current memory edge to the product of the left and right neighbours.
-                case '*':
-                    *get_memory_edge(MP, &memory, &memory_rings) = *get_neighbor(MP, LEFT, &memory, &memory_rings) *
-                                                                   *get_neighbor(MP, RIGHT, &memory, &memory_rings);
+                case '+': // sets the current memory edge to the sum of the left and right neighbours.
+                    *get_memory_edge(MP, &memory, &memory_rings) 
+                        = *get_neighbor(MP,  LEFT, &memory, &memory_rings) 
+                        + *get_neighbor(MP, RIGHT, &memory, &memory_rings);
                     break;
 
-                // sets the current memory edge to the quotient of the left and right neighbours (left / right).
-                case ':':
-                    *get_memory_edge(MP, &memory, &memory_rings) = *get_neighbor(MP, LEFT, &memory, &memory_rings) /
-                                                                   *get_neighbor(MP, RIGHT, &memory, &memory_rings);
+                case '-':  // sets the current memory edge to the difference of the left and right neighbours (left - right).
+                    *get_memory_edge(MP, &memory, &memory_rings) 
+                        = *get_neighbor(MP,  LEFT, &memory, &memory_rings) 
+                        - *get_neighbor(MP, RIGHT, &memory, &memory_rings);
                     break;
 
-                // sets the current memory edge to the modulo of the left and right neighbours (left % right)
-                case '%':
-                    *get_memory_edge(MP, &memory, &memory_rings) = *get_neighbor(MP, LEFT, &memory, &memory_rings) %
-                                                                   *get_neighbor(MP, RIGHT, &memory, &memory_rings);
+                case '*':  // sets the current memory edge to the product of the left and right neighbours.
+                    *get_memory_edge(MP, &memory, &memory_rings) 
+                        = *get_neighbor(MP,  LEFT, &memory, &memory_rings) 
+                        * *get_neighbor(MP, RIGHT, &memory, &memory_rings);
                     break;
 
-                // multiplies the current memory edge by -1.
-                case '~': *get_memory_edge(MP, &memory, &memory_rings) *= -1; break;
+                case ':': // sets the current memory edge to the quotient of the left and right neighbours (left / right).
+                    *get_memory_edge(MP, &memory, &memory_rings) 
+                        = *get_neighbor(MP,  LEFT, &memory, &memory_rings) 
+                        / *get_neighbor(MP, RIGHT, &memory, &memory_rings);
+                    break;
 
-                // reads a single byte from STDIN and sets the current memory edge to its value, or -1 if EOF
-                // reached.
-                case ',': {
+                case '%': // sets the current memory edge to the modulo of the left and right neighbours (left % right)
+                    *get_memory_edge(MP, &memory, &memory_rings) 
+                        = *get_neighbor(MP,  LEFT, &memory, &memory_rings) 
+                        % *get_neighbor(MP, RIGHT, &memory, &memory_rings);
+                    break;
+
+                case '~': // multiplies the current memory edge by -1. 
+                    *get_memory_edge(MP, &memory, &memory_rings) *= -1; 
+                    break;
+
+                
+                case ',': // reads a single byte from STDIN and sets the current memory edge to its value, or -1 if EOF reached. 
                     *get_memory_edge(MP, &memory, &memory_rings) = getchar();
-                } break;
+                    break;
 
                 // reads and discards from STDIN until a digit, a - or a + is found. Then reads as many characters
                 // as possible to form a valid (signed) decimal integer and sets the current memory edge to its
@@ -417,22 +390,25 @@ int main(int argc, char **argv) {
                     do {
                         ch = getchar();
                     } while (ch != EOF && !isdigit(ch) && ch != '+' && ch != '-');
-                    int *edge = get_memory_edge(MP, &memory, &memory_rings);
+                    memory_edge *edge = get_memory_edge(MP, &memory, &memory_rings);
                     *edge = 0;
                     if (ch != EOF) {
                         ungetc(ch, stdin);
                         scanf("%d", edge);
                     }
-                } break;
+                }   break;
 
-                // takes the current memory edge modulo 256 (positive) and writes the corresponding byte to STDOUT.
-                case ';': printf("%c", (char)modulo(*get_memory_edge(MP, &memory, &memory_rings), 256)); break;
+                case ';': // takes the current memory edge modulo 256 (positive) and writes the corresponding byte to STDOUT. 
+                    printf("%c", (char)modulo(*get_memory_edge(MP, &memory, &memory_rings), 256)); 
+                    break;
 
-                // writes the decimal representation of the current memory edge to STDOUT.
-                case '!': printf("%d", *get_memory_edge(MP, &memory, &memory_rings)); break;
+                case '!': // writes the decimal representation of the current memory edge to STDOUT. 
+                    printf("%d", *get_memory_edge(MP, &memory, &memory_rings));
+                    break;
 
-                // is a jump. When executed, the IP completely ignores the next command in its current direction.
-                case '$': IP->ignore_next = true; break;
+                case '$': // is a jump. When executed, the IP completely ignores the next command in its current direction.
+                    IP->ignore_next = true; 
+                    break;
 
                 // /, \, _, | are mirrors. They reflect the IP in the direction you'd expect. For completeness, the
                 // following table shows how they deflect an incoming IP. The top row corresponds to the current
@@ -446,42 +422,42 @@ int main(int argc, char **argv) {
                 //         |  │ NE NW  W SW SE  E
                 case '/':
                     switch (IP->direction) {
-                    case NW: IP->direction = E; break;
+                    case NW: IP->direction =  E; break;
                     case NE: IP->direction = NE; break;
-                    case E: IP->direction = NW; break;
-                    case SE: IP->direction = W; break;
+                    case  E: IP->direction = NW; break;
+                    case SE: IP->direction =  W; break;
                     case SW: IP->direction = SW; break;
-                    case W: IP->direction = SE; break;
+                    case  W: IP->direction = SE; break;
                     }
                     break;
                 case '\\':
                     switch (IP->direction) {
                     case NW: IP->direction = NW; break;
-                    case NE: IP->direction = W; break;
-                    case E: IP->direction = SW; break;
+                    case NE: IP->direction =  W; break;
+                    case  E: IP->direction = SW; break;
                     case SE: IP->direction = SE; break;
-                    case SW: IP->direction = E; break;
-                    case W: IP->direction = NE; break;
+                    case SW: IP->direction =  E; break;
+                    case  W: IP->direction = NE; break;
                     }
                     break;
                 case '_':
                     switch (IP->direction) {
                     case NW: IP->direction = SW; break;
                     case NE: IP->direction = SE; break;
-                    case E: IP->direction = E; break;
+                    case  E: IP->direction =  E; break;
                     case SE: IP->direction = NE; break;
                     case SW: IP->direction = NW; break;
-                    case W: IP->direction = W; break;
+                    case  W: IP->direction =  W; break;
                     }
                     break;
                 case '|':
                     switch (IP->direction) {
                     case NW: IP->direction = NE; break;
                     case NE: IP->direction = NW; break;
-                    case E: IP->direction = W; break;
+                    case  E: IP->direction =  W; break;
                     case SE: IP->direction = SW; break;
                     case SW: IP->direction = SE; break;
-                    case W: IP->direction = E; break;
+                    case  W: IP->direction =  E; break;
                     }
                     break;
 
@@ -495,44 +471,53 @@ int main(int argc, char **argv) {
                 //         >  │ SE  E  W  E NE ??
                 case '<':
                     switch (IP->direction) {
-                    case NW: IP->direction = W; break;
+                    case NW: IP->direction =  W; break;
                     case NE: IP->direction = SW; break;
-                    case E: IP->direction = *get_memory_edge(MP, &memory, &memory_rings) > 0 ? SE : NE; break;
+                    case  E: IP->direction = *get_memory_edge(MP, &memory, &memory_rings) > 0 ? SE : NE; break;
                     case SE: IP->direction = NW; break;
-                    case SW: IP->direction = W; break;
-                    case W: IP->direction = E; break;
+                    case SW: IP->direction =  W; break;
+                    case  W: IP->direction =  E; break;
                     }
                     break;
                 case '>':
                     switch (IP->direction) {
                     case NW: IP->direction = SE; break;
-                    case NE: IP->direction = E; break;
-                    case E: IP->direction = W; break;
-                    case SE: IP->direction = E; break;
+                    case NE: IP->direction =  E; break;
+                    case  E: IP->direction =  W; break;
+                    case SE: IP->direction =  E; break;
                     case SW: IP->direction = NE; break;
-                    case W: IP->direction = *get_memory_edge(MP, &memory, &memory_rings) > 0 ? NW : SW; break;
+                    case  W: IP->direction = *get_memory_edge(MP, &memory, &memory_rings) > 0 ? NW : SW; break;
                     }
                     break;
 
-                // switches to the previous IP
-                case '[': IP_index = modulo(IP_index - 1, 6); break;
-                // switches to the next IP
-                case ']': IP_index = modulo(IP_index + 1, 6); break;
-                // takes the current memory edge modulo 6 and switches to the IP with that index.
-                case '#': IP_index = modulo(*get_memory_edge(MP, &memory, &memory_rings), 6); break;
+                
+                case '[': // switches to the previous IP
+                    IP_index = modulo(IP_index - 1, 6); 
+                    break;
 
-                // moves the MP to the left neighbour.
-                case '{': move_mp(&MP, LEFT); break;
-                // moves the MP to the right neighbour.
-                case '}': move_mp(&MP, RIGHT); break;
-                // moves the MP backwards and to the left. This is equivalent to =}=.
-                case '"':
+                case ']': // switches to the next IP 
+                    IP_index = modulo(IP_index + 1, 6);
+                    break;
+  
+                case '#': // takes the current memory edge modulo 6 and switches to the IP with that index.
+                    IP_index = modulo(*get_memory_edge(MP, &memory, &memory_rings), 6); 
+                    break;
+                
+                case '{': // moves the MP to the left neighbour. 
+                    move_mp(&MP, LEFT); 
+                    break;
+                
+                case '}': // moves the MP to the right neighbour.
+                    move_mp(&MP, RIGHT); 
+                    break;
+                
+                case '"': // moves the MP backwards and to the left. This is equivalent to =}=.
                     MP.direction = MP.direction == IN ? OUT : IN;
                     move_mp(&MP, RIGHT);
                     MP.direction = MP.direction == IN ? OUT : IN;
                     break;
-                // moves the MP backwards and to the right. This is equivalent to ={=.
-                case '\'':
+
+                case '\'': // moves the MP backwards and to the right. This is equivalent to ={=.
                     MP.direction = MP.direction == IN ? OUT : IN;
                     move_mp(&MP, LEFT);
                     MP.direction = MP.direction == IN ? OUT : IN;
@@ -540,19 +525,23 @@ int main(int argc, char **argv) {
 
                 // reverses the direction of the MP. (This doesn't affect the current memory edge, but changes which
                 // edges are considered the left and right neighbour.)
-                case '=': MP.direction = MP.direction == IN ? OUT : IN; break;
+                case '=': 
+                    MP.direction = MP.direction == IN ? OUT : IN;
+                    break;
 
                 // moves the MP to the left neighbour if the current edge is zero or negative and to the right
                 // neighbour if it's positive.
-                case '^': move_mp(&MP, *get_memory_edge(MP, &memory, &memory_rings) <= 0 ? LEFT : RIGHT); break;
+                case '^': 
+                    move_mp(&MP, *get_memory_edge(MP, &memory, &memory_rings) <= 0 ? LEFT : RIGHT);
+                    break;
 
                 // copies the value of left neighbour into the current edge if the current edge is zero or
                 // negative and the value of the right neighbour if it's positive.
                 case '&': {
                     int *edge = get_memory_edge(MP, &memory, &memory_rings);
                     *edge = *get_neighbor(MP, *edge <= 0 ? LEFT : RIGHT, &memory, &memory_rings);
-                } break;
-                }
+                }   break;
+            }
         }
         long np = IP->p + direction_offset[IP->direction].dp;
         long nq = IP->q + direction_offset[IP->direction].dq;
